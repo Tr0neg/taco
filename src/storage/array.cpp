@@ -139,6 +139,16 @@ void printData(ostream& os, const Array& array) {
   os << "]";
 }
 
+void printStringData(ostream& os, const Array& array) {
+  const uint64_t* data = static_cast<const uint64_t*>(array.getData());
+  os << "[";
+  for (size_t i = 0; i < array.getSize(); ++i) {
+    if (i > 0) os << ", ";
+    os << detail::getInternedString(data[i]);
+  }
+  os << "]";
+}
+
 std::ostream& operator<<(std::ostream& os, const Array& array) {
   Datatype type = array.getType();
   switch (type.getKind()) {
@@ -157,6 +167,9 @@ std::ostream& operator<<(std::ostream& os, const Array& array) {
     case Datatype::UInt64:
       printData<uint64_t>(os, array);
       break;
+    case Datatype::String:
+      printStringData(os, array);
+      break;
     case Datatype::UInt128:
       printData<unsigned long long>(os, array);
       break;
@@ -170,6 +183,10 @@ std::ostream& operator<<(std::ostream& os, const Array& array) {
       printData<int32_t>(os, array);
       break;
     case Datatype::Int64:
+      printData<int64_t>(os, array);
+      break;
+    case Datatype::Date:
+    case Datatype::DateTime:
       printData<int64_t>(os, array);
       break;
     case Datatype::Int128:

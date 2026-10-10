@@ -773,6 +773,96 @@ TEST(expr, reduction_countsdist_sparse_output) {
 	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
 }
 
+TEST(expr, reduction_counts_and_countsdist_strings) {
+  Tensor<std::string> input("labels", {3, 2}, Format({Sparse, Sparse}));
+  input.insert({0, 0}, "яблоко");
+  input.insert({1, 0}, "яблоко");
+  input.insert({2, 0}, "");
+  input.insert({0, 1}, "банан");
+  input.insert({2, 1}, "банан");
+  input.pack();
+
+  ASSERT_EQ(input.getComponentType(), type<std::string>());
+  const std::vector<int> firstLabelCoordinate{0, 0};
+  const std::vector<int> emptyLabelCoordinate{2, 0};
+  ASSERT_EQ(input.at(firstLabelCoordinate), "яблоко");
+  ASSERT_EQ(input.at(emptyLabelCoordinate), "");
+
+  Tensor<long long> countsOutput("label_counts", {2}, Format({Dense}));
+  countsOutput(j) = counts(i, input(i, j));
+  countsOutput.evaluate();
+  const std::vector<int> firstGroupCoordinate{0};
+  const std::vector<int> secondGroupCoordinate{1};
+  EXPECT_EQ(countsOutput.at(firstGroupCoordinate), 3);
+  EXPECT_EQ(countsOutput.at(secondGroupCoordinate), 2);
+
+  Tensor<long long> distinctOutput("label_distinct", {2}, Format({Dense}));
+  distinctOutput(j) = countsdist(i, input(i, j));
+  distinctOutput.evaluate();
+  EXPECT_EQ(distinctOutput.at(firstGroupCoordinate), 2);
+  EXPECT_EQ(distinctOutput.at(secondGroupCoordinate), 1);
+
+  size_t iteratedValues = 0;
+  for (const auto& value : input) {
+    if (value.second.empty()) {
+      EXPECT_EQ(value.first[0], 2);
+    }
+    ++iteratedValues;
+  }
+  EXPECT_EQ(iteratedValues, 5u);
+}
+
+TEST(expr, reduction_counts_and_countsdist_dates) {
+  Tensor<Date> input("dates", {5}, Format({Sparse}));
+  input.insert({0}, Date(2025, 1, 2));
+  input.insert({1}, Date(2024, 12, 31));
+  input.insert({2}, Date(2025, 1, 2));
+  input.insert({3}, Date(2025, 2, 1));
+  input.insert({4}, Date(2024, 12, 31));
+  input.pack();
+
+  ASSERT_EQ(input.getComponentType(), type<Date>());
+  const std::vector<int> firstCoordinate{0};
+  const std::vector<int> scalarCoordinate;
+  ASSERT_TRUE(input.at(firstCoordinate) == Date(2025, 1, 2));
+
+  Tensor<long long> countOutput("date_count");
+  countOutput = counts(i, input(i));
+  countOutput.evaluate();
+  EXPECT_EQ(countOutput.at(scalarCoordinate), 5);
+
+  Tensor<long long> distinctOutput("date_distinct");
+  distinctOutput = countsdist(i, input(i));
+  distinctOutput.evaluate();
+  EXPECT_EQ(distinctOutput.at(scalarCoordinate), 3);
+}
+
+TEST(expr, reduction_counts_and_countsdist_datetimes) {
+  const Date day(2025, 5, 6);
+  const DateTime morning(day, 9, 15, 30, 123456);
+  Tensor<DateTime> input("timestamps", {4}, Format({Sparse}));
+  input.insert({0}, morning);
+  input.insert({1}, DateTime(day, 9, 15, 30, 123456));
+  input.insert({2}, DateTime(day, 9, 15, 30, 123457));
+  input.insert({3}, DateTime(day, 10, 0, 0));
+  input.pack();
+
+  ASSERT_EQ(input.getComponentType(), type<DateTime>());
+  const std::vector<int> firstCoordinate{0};
+  const std::vector<int> scalarCoordinate;
+  ASSERT_TRUE(input.at(firstCoordinate) == morning);
+
+  Tensor<long long> countOutput("datetime_count");
+  countOutput = counts(i, input(i));
+  countOutput.evaluate();
+  EXPECT_EQ(countOutput.at(scalarCoordinate), 4);
+
+  Tensor<long long> distinctOutput("datetime_distinct");
+  distinctOutput = countsdist(i, input(i));
+  distinctOutput.evaluate();
+  EXPECT_EQ(distinctOutput.at(scalarCoordinate), 3);
+}
+
 TEST(expr, reduction_counts_empty_sparse) {
 	Tensor<double> a("a");
 	Tensor<double> b("b", { 8 }, Format({ Sparse }, { 0 }));

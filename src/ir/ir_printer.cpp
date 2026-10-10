@@ -79,6 +79,9 @@ void IRPrinter::visit(const Literal* op) {
     case Datatype::UInt64:
       stream << op->getValue<uint64_t>();
     break;
+    case Datatype::String:
+      stream << op->getValue<uint64_t>();
+    break;
     case Datatype::UInt128:
       taco_not_supported_yet;
     break;
@@ -92,6 +95,10 @@ void IRPrinter::visit(const Literal* op) {
       stream << op->getValue<int32_t>();
     break;
     case Datatype::Int64:
+      stream << op->getValue<int64_t>();
+    break;
+    case Datatype::Date:
+    case Datatype::DateTime:
       stream << op->getValue<int64_t>();
     break;
     case Datatype::Int128:

@@ -8,6 +8,7 @@
 #include <utility>
 #include <array>
 #include <mutex>
+#include <type_traits>
 
 #include "taco/type.h"
 #include "taco/format.h"
@@ -29,6 +30,49 @@
 
 
 namespace taco {
+
+/// Maps public tensor component types to their fixed-width storage form.
+template <typename CType>
+struct TensorValueCodec {
+  typedef CType StorageType;
+  static StorageType encode(const CType& value) { return value; }
+  static CType decode(const StorageType& value) { return value; }
+};
+
+template <>
+struct TensorValueCodec<std::string> {
+  typedef uint64_t StorageType;
+  static StorageType encode(const std::string& value) {
+    return detail::internString(value);
+  }
+  static std::string decode(StorageType value) {
+    return detail::getInternedString(value);
+  }
+};
+
+template <>
+struct TensorValueCodec<Date> {
+  typedef int64_t StorageType;
+  static StorageType encode(Date value) { return value.getDaysSinceEpoch(); }
+  static Date decode(StorageType value) { return Date(value); }
+};
+
+template <>
+struct TensorValueCodec<DateTime> {
+  typedef int64_t StorageType;
+  static StorageType encode(DateTime value) {
+    return value.getMicrosecondsSinceEpoch();
+  }
+  static DateTime decode(StorageType value) { return DateTime(value); }
+};
+
+template <typename CType>
+Literal makeTensorFillLiteral(const CType& value) {
+  typedef typename TensorValueCodec<CType>::StorageType StorageType;
+  StorageType encoded = TensorValueCodec<CType>::encode(value);
+  const Datatype componentType = type<CType>();
+  return Literal::fromEncodedValue(componentType, &encoded);
+}
 
 /// Inherits Access and adds a TensorBase object. Allows for tensor retreival
 /// for assignment setting and argument packing.
@@ -137,10 +181,16 @@ public:
   template <typename CType>
   void insert(const std::initializer_list<int>& coordinate, CType value);
 
+  /// Insert a string literal into a string tensor.
+  void insert(const std::initializer_list<int>& coordinate, const char* value);
+
   /// Insert a value into the tensor. The number of coordinates must match the
   /// tensor order.
   template <typename CType>
   void insert(const std::vector<int>& coordinate, CType value);
+
+  /// Insert a string literal into a string tensor.
+  void insert(const std::vector<int>& coordinate, const char* value);
 
   /// Fill the tensor with the list of components defined by the iterator range (begin, end).
   ///
@@ -163,6 +213,7 @@ public:
   template<typename T, typename CType>
   class const_iterator {
   public:
+    typedef typename TensorValueCodec<CType>::StorageType StorageCType;
     class Coordinates {
     public:
       const T& operator[](size_t idx) const {
@@ -234,7 +285,8 @@ public:
         ++chunksIterated;
       }
 
-      curVal.second = valBuffer[bufferPos];
+      curVal.second = bufferSize == 0
+          ? CType{} : TensorValueCodec<CType>::decode(valBuffer[bufferPos]);
       return *this;
     }
 
@@ -270,7 +322,7 @@ public:
     struct Context {
       Context(int order, int bufferCapacity, void* iterCtx) :
           coordBuffer(new T[order * bufferCapacity]),
-          valBuffer(new CType[bufferCapacity]),
+          valBuffer(new StorageCType[bufferCapacity]),
           iterCtx(iterCtx) {
       }
 
@@ -286,7 +338,7 @@ public:
       }
 
       T* coordBuffer;
-      CType* valBuffer;
+      StorageCType* valBuffer;
       void* iterCtx;
     };
 
@@ -300,7 +352,7 @@ public:
         chunksIterated(-1),
         ctx(isEnd ? nullptr : makeContext(tensorOrder, bufferCapacity)), 
         valBuffer(ctx ? ctx->valBuffer : nullptr),
-        curVal(Coordinates(tensorOrder), (CType)0) {
+        curVal(Coordinates(tensorOrder), CType{}) {
       if (!isEnd) {
         const auto helperFuncs = tensor->getHelperFunctions(tensor->getFormat(), 
             tensor->getComponentType(), tensor->getDimensions());
@@ -337,7 +389,7 @@ public:
     int64_t                        chunksIterated;
     fnptr_t                        iterFunc;
     const std::shared_ptr<Context> ctx;
-    const CType*                   valBuffer;
+    const StorageCType*            valBuffer;
     value_type                     curVal;
   };
 
@@ -569,6 +621,9 @@ public:
   /// Create a scalar with the given name
   explicit Tensor(std::string name);
   /// Create a scalar
+  template <typename T = CType,
+            typename std::enable_if<!std::is_same<T, std::string>::value,
+                                    int>::type = 0>
   explicit Tensor(CType value);
 
   /// Create a tensor with the given dimensions. The format defaults to sparse 
@@ -952,10 +1007,17 @@ void TensorBase::insert(const std::initializer_list<int>& coordinate, CType valu
   for (int idx : coordinate) {
     *(coordLoc++) = idx;
   }
+  typedef typename TensorValueCodec<CType>::StorageType StorageType;
+  StorageType encodedValue = TensorValueCodec<CType>::encode(value);
   TypedComponentPtr valLoc(getComponentType(), coordLoc);
-  *valLoc = TypedComponentVal(getComponentType(), &value);
+  *valLoc = TypedComponentVal(getComponentType(), &encodedValue);
   content->coordinateBufferUsed += content->coordinateSize;
   setNeedsPack(true);
+}
+
+inline void TensorBase::insert(const std::initializer_list<int>& coordinate,
+                               const char* value) {
+  insert(coordinate, std::string(value));
 }
 
 template <typename CType>
@@ -963,6 +1025,11 @@ void TensorBase::insert(const std::vector<int>& coordinate, CType value) {
   syncDependentTensors();
   insertUnsynced(coordinate, value);
   setNeedsPack(true);
+}
+
+inline void TensorBase::insert(const std::vector<int>& coordinate,
+                               const char* value) {
+  insert(coordinate, std::string(value));
 }
 
 template <typename CType>
@@ -979,8 +1046,10 @@ void TensorBase::insertUnsynced(const std::vector<int>& coordinate, CType value)
   for (int idx : coordinate) {
     *(coordLoc++) = idx;
   }
+  typedef typename TensorValueCodec<CType>::StorageType StorageType;
+  StorageType encodedValue = TensorValueCodec<CType>::encode(value);
   TypedComponentPtr valLoc(getComponentType(), coordLoc);
-  *valLoc = TypedComponentVal(getComponentType(), &value);
+  *valLoc = TypedComponentVal(getComponentType(), &encodedValue);
   content->coordinateBufferUsed += content->coordinateSize;
 }
   
@@ -995,8 +1064,10 @@ void TensorBase::insertUnchecked(
   for (size_t i = 0; i < coordinate.getOrder(); ++i) {
     *(coordLoc++) = coordinate[i];
   }
+  typedef typename TensorValueCodec<CType>::StorageType StorageType;
+  StorageType encodedValue = TensorValueCodec<CType>::encode(value);
   TypedComponentPtr valLoc(getComponentType(), coordLoc);
-  *valLoc = TypedComponentVal(getComponentType(), &value);
+  *valLoc = TypedComponentVal(getComponentType(), &encodedValue);
   content->coordinateBufferUsed += content->coordinateSize;
 }
 
@@ -1044,7 +1115,7 @@ CType TensorBase::at(const std::vector<int>& coordinate) {
       return value.second;
     }
   }
-  return 0;
+  return CType{};
 }
 
 template<typename CType>
@@ -1083,33 +1154,41 @@ template <typename CType>
 Tensor<CType>::Tensor(std::string name) : TensorBase(name, type<CType>()) {}
 
 template <typename CType>
+template <typename T,
+          typename std::enable_if<!std::is_same<T, std::string>::value,
+                                  int>::type>
 Tensor<CType>::Tensor(CType value) : TensorBase(value) {}
 
 template <typename CType>
 Tensor<CType>::Tensor(std::vector<int> dimensions, ModeFormat modeType, CType fill)
-    : TensorBase(type<CType>(), dimensions, modeType, fill) {}
+    : TensorBase(type<CType>(), dimensions, modeType,
+                 makeTensorFillLiteral(fill)) {}
 
 template <typename CType>
 Tensor<CType>::Tensor(std::vector<int> dimensions, Format format, CType fill)
-    : TensorBase(type<CType>(), dimensions, format, fill) {}
+    : TensorBase(type<CType>(), dimensions, format,
+                 makeTensorFillLiteral(fill)) {}
 
 template <typename CType>
 Tensor<CType>::Tensor(std::string name, std::vector<int> dimensions,
                       ModeFormat modeType, CType fill)
-    : TensorBase(name, type<CType>(), dimensions, modeType, fill) {}
+    : TensorBase(name, type<CType>(), dimensions, modeType,
+                 makeTensorFillLiteral(fill)) {}
 
 template <typename CType>
 Tensor<CType>::Tensor(std::vector<int> dimensions, CType fill)
-    : TensorBase(type<CType>(), dimensions, fill) {}
+    : TensorBase(type<CType>(), dimensions, makeTensorFillLiteral(fill)) {}
 
 template <typename CType>
 Tensor<CType>::Tensor(std::string name, std::vector<int> dimensions, CType fill)
-    : TensorBase(name, type<CType>(), dimensions, fill) {}
+    : TensorBase(name, type<CType>(), dimensions,
+                 makeTensorFillLiteral(fill)) {}
 
 template <typename CType>
 Tensor<CType>::Tensor(std::string name, std::vector<int> dimensions, Format format,
                       CType fill)
-    : TensorBase(name, type<CType>(), dimensions, format, fill) {}
+    : TensorBase(name, type<CType>(), dimensions, format,
+                 makeTensorFillLiteral(fill)) {}
 
 template <typename CType>
 Tensor<CType>::Tensor(const TensorBase& tensor) : TensorBase(tensor) {

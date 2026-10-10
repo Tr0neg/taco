@@ -8,6 +8,8 @@
 #include "taco/error.h"
 #include <complex>
 #include <memory>
+#include <string>
+#include "taco/temporal.h"
 
 namespace taco {
 
@@ -32,6 +34,9 @@ public:
     Float64,
     Complex64,
     Complex128,
+    String,
+    Date,
+    DateTime,
     Undefined  /// Undefined type
   };
 
@@ -159,6 +164,25 @@ template<> inline Datatype type<std::complex<double>>() {
   return Complex128;
 }
 
+template<> inline Datatype type<std::string>() {
+  return Datatype(Datatype::String);
+}
+
+template<> inline Datatype type<Date>() {
+  return Datatype(Datatype::Date);
+}
+
+template<> inline Datatype type<DateTime>() {
+  return Datatype(Datatype::DateTime);
+}
+
+namespace detail {
+/// Intern a string so it can be stored as a fixed-width value in tensor storage.
+uint64_t internString(const std::string& value);
+/// Look up a string previously interned by internString.
+std::string getInternedString(uint64_t id);
+}
+
 /// A union storing all of the different types that a component can take.
 union ComponentTypeUnion {
   bool boolValue;
@@ -180,6 +204,9 @@ union ComponentTypeUnion {
 
   std::complex<float> complex64Value;
   std::complex<double> complex128Value;
+  uint64_t stringValue;
+  int64_t dateValue;
+  int64_t dateTimeValue;
   ComponentTypeUnion() {int32Value = 0;}
 };
 

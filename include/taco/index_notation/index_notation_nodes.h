@@ -4,6 +4,8 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <cstring>
+#include <cstdlib>
 #include <numeric>
 #include <functional>
 
@@ -146,6 +148,11 @@ struct LiteralNode : public IndexExprNode {
   template <typename T> LiteralNode(T val) : IndexExprNode(type<T>()) {
     this->val = malloc(sizeof(T));
     *static_cast<T*>(this->val) = val;
+  }
+
+  LiteralNode(Datatype type, const void* value) : IndexExprNode(type) {
+    this->val = malloc(type.getNumBytes());
+    memcpy(this->val, value, type.getNumBytes());
   }
 
   ~LiteralNode() {

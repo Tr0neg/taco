@@ -70,7 +70,18 @@ bool CodeGen::checkForAlloc(const Function *func) {
 // helper to translate from taco type to C type
 string CodeGen::printCType(Datatype type, bool is_ptr) {
   stringstream ret;
-  ret << type;
+  switch (type.getKind()) {
+    case Datatype::String:
+      ret << "uint64_t";
+      break;
+    case Datatype::Date:
+    case Datatype::DateTime:
+      ret << "int64_t";
+      break;
+    default:
+      ret << type;
+      break;
+  }
 
   if (is_ptr) {
     ret << "*";

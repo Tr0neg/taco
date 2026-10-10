@@ -324,6 +324,9 @@ void TensorBase::pack() {
       case Datatype::UInt64:
         reinsertPackedComponents<uint64_t>();
         break;
+      case Datatype::String:
+        reinsertPackedComponents<std::string>();
+        break;
       case Datatype::Int8:
         reinsertPackedComponents<int8_t>();
         break;
@@ -335,6 +338,12 @@ void TensorBase::pack() {
         break;
       case Datatype::Int64:
         reinsertPackedComponents<int64_t>();
+        break;
+      case Datatype::Date:
+        reinsertPackedComponents<Date>();
+        break;
+      case Datatype::DateTime:
+        reinsertPackedComponents<DateTime>();
         break;
       case Datatype::Float32:
         reinsertPackedComponents<float>();
@@ -1053,6 +1062,30 @@ bool scalarEquals(std::complex<T> a, std::complex<T> b) {
   return true;
 }
 
+bool isZero(const std::string& value) {
+  return value.empty();
+}
+
+bool scalarEquals(const std::string& a, const std::string& b) {
+  return a == b;
+}
+
+bool isZero(Date value) {
+  return value.getDaysSinceEpoch() == 0;
+}
+
+bool scalarEquals(Date a, Date b) {
+  return a == b;
+}
+
+bool isZero(DateTime value) {
+  return value.getMicrosecondsSinceEpoch() == 0;
+}
+
+bool scalarEquals(DateTime a, DateTime b) {
+  return a == b;
+}
+
 template<typename T>
 bool equalsTyped(const TensorBase& a, const TensorBase& b) {
   auto at = iterate<T>(a);
@@ -1132,11 +1165,14 @@ bool equals(const TensorBase& a, const TensorBase& b) {
     case Datatype::UInt16: return equalsTyped<uint16_t>(a, b);
     case Datatype::UInt32: return equalsTyped<uint32_t>(a, b);
     case Datatype::UInt64: return equalsTyped<uint64_t>(a, b);
+    case Datatype::String: return equalsTyped<std::string>(a, b);
     case Datatype::UInt128: return equalsTyped<unsigned long long>(a, b);
     case Datatype::Int8: return equalsTyped<int8_t>(a, b);
     case Datatype::Int16: return equalsTyped<int16_t>(a, b);
     case Datatype::Int32: return equalsTyped<int32_t>(a, b);
     case Datatype::Int64: return equalsTyped<int64_t>(a, b);
+    case Datatype::Date: return equalsTyped<Date>(a, b);
+    case Datatype::DateTime: return equalsTyped<DateTime>(a, b);
     case Datatype::Int128: return equalsTyped<long long>(a, b);
     case Datatype::Float32: return equalsTyped<float>(a, b);
     case Datatype::Float64: return equalsTyped<double>(a, b);
@@ -1191,11 +1227,14 @@ ostream& operator<<(ostream& os, const TensorBase& tensor) {
       case Datatype::UInt16: os << ((uint16_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::UInt32: os << ((uint32_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::UInt64: os << ((uint64_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
+      case Datatype::String: os << detail::getInternedString(((uint64_t*)(ptr+tensor.getOrder()))[0]) << std::endl; break;
       case Datatype::UInt128: os << ((unsigned long long*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Int8: os << ((int8_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Int16: os << ((int16_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Int32: os << ((int32_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Int64: os << ((int64_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
+      case Datatype::Date: os << Date(((int64_t*)(ptr+tensor.getOrder()))[0]).daysSinceEpoch << " days since epoch" << std::endl; break;
+      case Datatype::DateTime: os << ((int64_t*)(ptr+tensor.getOrder()))[0] << " microseconds since epoch" << std::endl; break;
       case Datatype::Int128: os << ((long long*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Float32: os << ((float*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Float64: os << ((double*)(ptr+tensor.getOrder()))[0] << std::endl; break;
@@ -1231,11 +1270,14 @@ ostream& operator<<(ostream& os, TensorBase& tensor) {
       case Datatype::UInt16: os << ((uint16_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::UInt32: os << ((uint32_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::UInt64: os << ((uint64_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
+      case Datatype::String: os << detail::getInternedString(((uint64_t*)(ptr+tensor.getOrder()))[0]) << std::endl; break;
       case Datatype::UInt128: os << ((unsigned long long*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Int8: os << ((int8_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Int16: os << ((int16_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Int32: os << ((int32_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Int64: os << ((int64_t*)(ptr+tensor.getOrder()))[0] << std::endl; break;
+      case Datatype::Date: os << Date(((int64_t*)(ptr+tensor.getOrder()))[0]).daysSinceEpoch << " days since epoch" << std::endl; break;
+      case Datatype::DateTime: os << ((int64_t*)(ptr+tensor.getOrder()))[0] << " microseconds since epoch" << std::endl; break;
       case Datatype::Int128: os << ((long long*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Float32: os << ((float*)(ptr+tensor.getOrder()))[0] << std::endl; break;
       case Datatype::Float64: os << ((double*)(ptr+tensor.getOrder()))[0] << std::endl; break;

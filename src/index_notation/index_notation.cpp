@@ -1258,6 +1258,10 @@ Literal::Literal(std::complex<float> val) : Literal(new LiteralNode(val)) {
 Literal::Literal(std::complex<double> val) : Literal(new LiteralNode(val)) {
 }
 
+Literal Literal::fromEncodedValue(Datatype type, const void* value) {
+  return Literal(new LiteralNode(type, value));
+}
+
 Literal Literal::zero(Datatype type) {
   switch (type.getKind()) {
     case Datatype::Bool:        return Literal(false);
@@ -1273,6 +1277,15 @@ Literal Literal::zero(Datatype type) {
     case Datatype::Float64:     return Literal(double(0.0));
     case Datatype::Complex64:   return Literal(std::complex<float>());
     case Datatype::Complex128:  return Literal(std::complex<double>());
+    case Datatype::String: {
+      const uint64_t zero = 0;
+      return Literal::fromEncodedValue(type, &zero);
+    }
+    case Datatype::Date:
+    case Datatype::DateTime: {
+      const int64_t zero = 0;
+      return Literal::fromEncodedValue(type, &zero);
+    }
     default:                    taco_ierror << "unsupported type";
   };
 

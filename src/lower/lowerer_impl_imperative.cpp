@@ -3202,6 +3202,11 @@ Expr LowererImplImperative::lowerLiteral(Literal literal) {
       return ir::Literal::make((unsigned long long)literal.getVal<uint32_t>());
     case Datatype::UInt64:
       return ir::Literal::make((unsigned long long)literal.getVal<uint64_t>());
+    case Datatype::String:
+      return ir::Literal::make(
+          TypedComponentVal(literal.getDataType(),
+                            static_cast<uint64_t*>(literal.getValPtr())),
+          literal.getDataType());
     case Datatype::UInt128:
       taco_not_supported_yet;
       break;
@@ -3213,6 +3218,12 @@ Expr LowererImplImperative::lowerLiteral(Literal literal) {
       return ir::Literal::make((int)literal.getVal<int32_t>());
     case Datatype::Int64:
       return ir::Literal::make((long long)literal.getVal<int64_t>());
+    case Datatype::Date:
+    case Datatype::DateTime:
+      return ir::Literal::make(
+          TypedComponentVal(literal.getDataType(),
+                            static_cast<int64_t*>(literal.getValPtr())),
+          literal.getDataType());
     case Datatype::Int128:
       taco_not_supported_yet;
       break;

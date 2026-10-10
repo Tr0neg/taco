@@ -97,6 +97,13 @@ Expr Literal::zero(Datatype datatype) {
     case Datatype::Complex128:
       zero = Literal::make(std::complex<double>());
       break;
+    case Datatype::String:
+      zero = Literal::make(uint64_t(0), datatype);
+      break;
+    case Datatype::Date:
+    case Datatype::DateTime:
+      zero = Literal::make(int64_t(0), datatype);
+      break;
     case Datatype::Undefined:
       taco_ierror;
       break;
@@ -206,6 +213,9 @@ bool Literal::equalsScalar(double scalar) const {
     case Datatype::UInt64:
       return compare<uint64_t>(this, scalar);
     break;
+    case Datatype::String:
+      return compare<uint64_t>(this, scalar);
+    break;
     case Datatype::UInt128:
       taco_not_supported_yet;
     break;
@@ -219,6 +229,10 @@ bool Literal::equalsScalar(double scalar) const {
       return compare<int32_t>(this, scalar);
     break;
     case Datatype::Int64:
+      return compare<int64_t>(this, scalar);
+    break;
+    case Datatype::Date:
+    case Datatype::DateTime:
       return compare<int64_t>(this, scalar);
     break;
     case Datatype::Int128:

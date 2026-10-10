@@ -357,7 +357,19 @@ void CodeGen_C::visit(const VarDecl* op) {
     stream << ";";
     stream << endl;
   } else {
-    IRPrinter::visit(op);
+    doIndent();
+    auto var = op->var.as<Var>();
+    taco_iassert(var);
+    stream << keywordString(printCType(var->type, var->is_ptr));
+    if (var->is_ptr) {
+      stream << " restrict";
+    }
+    stream << " ";
+    op->var.accept(this);
+    parentPrecedence = Precedence::TOP;
+    stream << " = ";
+    op->rhs.accept(this);
+    stream << ";" << endl;
   }
 }
 
@@ -451,7 +463,7 @@ void CodeGen_C::visit(const For* op) {
   doIndent();
   stream << keywordString("for") << " (";
   if (!emittingCoroutine) {
-    stream << keywordString(util::toString(op->var.type())) << " ";
+    stream << keywordString(printCType(op->var.type(), false)) << " ";
   }
   op->var.accept(this);
   stream << " = ";
@@ -601,7 +613,7 @@ void CodeGen_C::generateShim(const Stmt& func, stringstream &ret) {
   if (returnType.second != Datatype()) {
     ret << "(void**)(parameterPack[0]), ";
     ret << "(char*)(parameterPack[1]), ";
-    ret << "(" << returnType.second << "*)(parameterPack[2]), ";
+    ret << "(" << printCType(returnType.second, true) << ")(parameterPack[2]), ";
     ret << "(int32_t*)(parameterPack[3])";
 
     i = 4;

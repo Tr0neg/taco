@@ -8,6 +8,9 @@
 #include <ostream>
 #include <set>
 #include <complex>
+#include <mutex>
+#include <unordered_map>
+#include <stdexcept>
 
 using namespace std;
 
@@ -49,7 +52,14 @@ Datatype max_type(Datatype a, Datatype b) {
   if (a == b) {
     return a;
   }
-  else if (a.isComplex() || b.isComplex()) {
+  const auto isNonNumeric = [](Datatype type) {
+    return type == Datatype(Datatype::String) ||
+           type == Datatype(Datatype::Date) ||
+           type == Datatype(Datatype::DateTime);
+  };
+  taco_uassert(!isNonNumeric(a) && !isNonNumeric(b))
+      << "Cannot promote string/date types with numeric types";
+  if (a.isComplex() || b.isComplex()) {
     if (a == Complex128 || b == Complex128 || a == Float64 || b == Float64) {
       return Complex128;
     }
@@ -99,6 +109,9 @@ int Datatype::getNumBits() const {
     case Int64:
     case Float64:
     case Complex64:
+    case String:
+    case Date:
+    case DateTime:
       return 64;
     case Complex128:
     case Int128:
@@ -118,6 +131,9 @@ std::ostream& operator<<(std::ostream& os, const Datatype& type) {
   else if (type == Datatype::Float64) os << "double";
   else if (type == Datatype::Complex64) os << "float complex";
   else if (type == Datatype::Complex128) os << "double complex";
+  else if (type == Datatype::String) os << "string";
+  else if (type == Datatype::Date) os << "date";
+  else if (type == Datatype::DateTime) os << "datetime";
   else os << "Undefined";
   return os;
 }
@@ -139,6 +155,9 @@ std::ostream& operator<<(std::ostream& os, const Datatype::Kind& kind) {
     case Datatype::Float64: os << "Float64"; break;
     case Datatype::Complex64: os << "Complex64"; break;
     case Datatype::Complex128: os << "Complex128"; break;
+    case Datatype::String: os << "String"; break;
+    case Datatype::Date: os << "Date"; break;
+    case Datatype::DateTime: os << "DateTime"; break;
     case Datatype::Undefined: os << "Undefined"; break;
   }
   return os;
@@ -217,6 +236,48 @@ Datatype Complex(int bits) {
   
 Datatype Complex64  = Datatype(Datatype::Complex64);
 Datatype Complex128 = Datatype(Datatype::Complex128);
+
+namespace detail {
+namespace {
+struct StringPool {
+  StringPool() {
+    values.push_back(std::string());
+    ids.insert(std::make_pair(std::string(), uint64_t(0)));
+  }
+
+  std::mutex mutex;
+  std::unordered_map<std::string, uint64_t> ids;
+  std::vector<std::string> values;
+};
+
+StringPool& getStringPool() {
+  static StringPool pool;
+  return pool;
+}
+}
+
+uint64_t internString(const std::string& value) {
+  StringPool& pool = getStringPool();
+  std::lock_guard<std::mutex> lock(pool.mutex);
+  auto found = pool.ids.find(value);
+  if (found != pool.ids.end()) {
+    return found->second;
+  }
+  const uint64_t id = static_cast<uint64_t>(pool.values.size());
+  pool.values.push_back(value);
+  pool.ids.insert(std::make_pair(value, id));
+  return id;
+}
+
+std::string getInternedString(uint64_t id) {
+  StringPool& pool = getStringPool();
+  std::lock_guard<std::mutex> lock(pool.mutex);
+  if (id >= pool.values.size()) {
+    throw std::out_of_range("Unknown interned string id");
+  }
+  return pool.values[static_cast<size_t>(id)];
+}
+}
 
 struct Dimension::Content {
   size_t size;

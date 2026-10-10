@@ -17,11 +17,14 @@ size_t TypedComponent::getAsIndex(const ComponentTypeUnion &mem) const {
     case Datatype::UInt16: return (size_t) mem.uint16Value;
     case Datatype::UInt32: return (size_t) mem.uint32Value;
     case Datatype::UInt64: return (size_t) mem.uint64Value;
+    case Datatype::String: return (size_t) mem.stringValue;
     case Datatype::UInt128: return (size_t) mem.uint128Value;
     case Datatype::Int8: return (size_t) mem.int8Value;
     case Datatype::Int16: return (size_t) mem.int16Value;
     case Datatype::Int32: return (size_t) mem.int32Value;
     case Datatype::Int64: return (size_t) mem.int64Value;
+    case Datatype::Date: return (size_t) mem.dateValue;
+    case Datatype::DateTime: return (size_t) mem.dateTimeValue;
     case Datatype::Int128: return (size_t) mem.int128Value;
     case Datatype::Float32: return (size_t) mem.float32Value;
     case Datatype::Float64: return (size_t) mem.float64Value;
@@ -40,11 +43,14 @@ void TypedComponent::set(ComponentTypeUnion& mem, const ComponentTypeUnion& valu
     case Datatype::UInt16: mem.uint16Value = value.uint16Value; break;
     case Datatype::UInt32: mem.uint32Value = value.uint32Value; break;
     case Datatype::UInt64: mem.uint64Value = value.uint64Value; break;
+    case Datatype::String: mem.stringValue = value.stringValue; break;
     case Datatype::UInt128: mem.uint128Value = value.uint128Value; break;
     case Datatype::Int8: mem.int8Value = value.int8Value; break;
     case Datatype::Int16: mem.int16Value = value.int16Value; break;
     case Datatype::Int32: mem.int32Value = value.int32Value; break;
     case Datatype::Int64: mem.int64Value = value.int64Value; break;
+    case Datatype::Date: mem.dateValue = value.dateValue; break;
+    case Datatype::DateTime: mem.dateTimeValue = value.dateTimeValue; break;
     case Datatype::Int128: mem.int128Value = value.int128Value; break;
     case Datatype::Float32: mem.float32Value = value.float32Value; break;
     case Datatype::Float64: mem.float64Value = value.float64Value; break;
@@ -61,11 +67,14 @@ void TypedComponent::setInt(ComponentTypeUnion& mem, const int value) {
     case Datatype::UInt16: mem.uint16Value = value; break;
     case Datatype::UInt32: mem.uint32Value = value; break;
     case Datatype::UInt64: mem.uint64Value = value; break;
+    case Datatype::String: mem.stringValue = static_cast<uint64_t>(value); break;
     case Datatype::UInt128: mem.uint128Value = value; break;
     case Datatype::Int8: mem.int8Value = value; break;
     case Datatype::Int16: mem.int16Value = value; break;
     case Datatype::Int32: mem.int32Value = value; break;
     case Datatype::Int64: mem.int64Value = value; break;
+    case Datatype::Date: mem.dateValue = value; break;
+    case Datatype::DateTime: mem.dateTimeValue = value; break;
     case Datatype::Int128: mem.int128Value = value; break;
     case Datatype::Float32: mem.float32Value = value; break;
     case Datatype::Float64: mem.float64Value = value; break;
@@ -92,6 +101,9 @@ void TypedComponent::add(ComponentTypeUnion& result, const ComponentTypeUnion& a
     case Datatype::Float64: result.float64Value  = a.float64Value + b.float64Value; break;
     case Datatype::Complex64: result.complex64Value  = a.complex64Value + b.complex64Value; break;
     case Datatype::Complex128: result.complex128Value  = a.complex128Value + b.complex128Value; break;
+    case Datatype::String:
+    case Datatype::Date:
+    case Datatype::DateTime: taco_not_supported_yet; break;
     case Datatype::Undefined: taco_ierror; break;
   }
 }
@@ -113,6 +125,9 @@ void TypedComponent::addInt(ComponentTypeUnion& result, const ComponentTypeUnion
     case Datatype::Float64: result.float64Value  = a.float64Value + b; break;
     case Datatype::Complex64: result.complex64Value  = a.complex64Value + std::complex<float>(b, 0); break;
     case Datatype::Complex128: result.complex128Value  = a.complex128Value + std::complex<double>(b, 0); break;
+    case Datatype::String:
+    case Datatype::Date:
+    case Datatype::DateTime: taco_not_supported_yet; break;
     case Datatype::Undefined: taco_ierror; break;
   }
 }
@@ -125,6 +140,9 @@ void TypedComponent::negate(ComponentTypeUnion& result, const ComponentTypeUnion
     case Datatype::UInt32:
     case Datatype::UInt64:
     case Datatype::UInt128:
+    case Datatype::String:
+    case Datatype::Date:
+    case Datatype::DateTime:
       taco_ierror;
       break;
     case Datatype::Int8: result.int8Value  = -a.int8Value; break;
@@ -157,6 +175,9 @@ void TypedComponent::multiply(ComponentTypeUnion& result, const ComponentTypeUni
     case Datatype::Float64: result.float64Value  = a.float64Value * b.float64Value; break;
     case Datatype::Complex64: result.complex64Value  = a.complex64Value * b.complex64Value; break;
     case Datatype::Complex128: result.complex128Value  = a.complex128Value * b.complex128Value; break;
+    case Datatype::String:
+    case Datatype::Date:
+    case Datatype::DateTime: taco_not_supported_yet; break;
     case Datatype::Undefined: taco_ierror; break;
   }
 }
@@ -178,6 +199,9 @@ void TypedComponent::multiplyInt(ComponentTypeUnion& result, const ComponentType
     case Datatype::Float64: result.float64Value  = a.float64Value * b; break;
     case Datatype::Complex64: result.complex64Value  = a.complex64Value * std::complex<float>(b, 0); break;
     case Datatype::Complex128: result.complex128Value  = a.complex128Value * std::complex<double>(b, 0); break;
+    case Datatype::String:
+    case Datatype::Date:
+    case Datatype::DateTime: taco_not_supported_yet; break;
     case Datatype::Undefined: taco_ierror; break;
   }
 }
@@ -467,6 +491,9 @@ bool operator>(const TypedComponentVal& a, const TypedComponentVal &other) {
     case Datatype::Int128: return a.get().int128Value > (other.get()).int128Value;
     case Datatype::Float32: return a.get().float32Value > (other.get()).float32Value;
     case Datatype::Float64: return a.get().float64Value > (other.get()).float64Value;
+    case Datatype::String: return a.get().stringValue > other.get().stringValue;
+    case Datatype::Date: return a.get().dateValue > other.get().dateValue;
+    case Datatype::DateTime: return a.get().dateTimeValue > other.get().dateTimeValue;
     case Datatype::Complex64: taco_ierror; return false;
     case Datatype::Complex128: taco_ierror; return false;
     case Datatype::Undefined: taco_ierror; return false;
@@ -491,6 +518,9 @@ bool operator==(const TypedComponentVal& a, const TypedComponentVal &other) {
     case Datatype::Int128: return a.get().int128Value == (other.get()).int128Value;
     case Datatype::Float32: return a.get().float32Value == (other.get()).float32Value;
     case Datatype::Float64: return a.get().float64Value == (other.get()).float64Value;
+    case Datatype::String: return a.get().stringValue == other.get().stringValue;
+    case Datatype::Date: return a.get().dateValue == other.get().dateValue;
+    case Datatype::DateTime: return a.get().dateTimeValue == other.get().dateTimeValue;
     case Datatype::Complex64: taco_ierror; return false;
     case Datatype::Complex128: taco_ierror; return false;
     case Datatype::Undefined: taco_ierror; return false;
@@ -530,6 +560,9 @@ bool operator>(const TypedComponentVal& a, const int other) {
     case Datatype::Int128: return a.get().int128Value > other;
     case Datatype::Float32: return a.get().float32Value > other;
     case Datatype::Float64: return a.get().float64Value > other;
+    case Datatype::String: return a.get().stringValue > static_cast<uint64_t>(other);
+    case Datatype::Date: return a.get().dateValue > other;
+    case Datatype::DateTime: return a.get().dateTimeValue > other;
     case Datatype::Complex64: taco_ierror; return false;
     case Datatype::Complex128: taco_ierror; return false;
     case Datatype::Undefined: taco_ierror; return false;
@@ -553,6 +586,9 @@ bool operator==(const TypedComponentVal& a, const int other) {
     case Datatype::Int128: return a.get().int128Value == other;
     case Datatype::Float32: return a.get().float32Value == other;
     case Datatype::Float64: return a.get().float64Value == other;
+    case Datatype::String: return a.get().stringValue == static_cast<uint64_t>(other);
+    case Datatype::Date: return a.get().dateValue == other;
+    case Datatype::DateTime: return a.get().dateTimeValue == other;
     case Datatype::Complex64: taco_ierror; return false;
     case Datatype::Complex128: taco_ierror; return false;
     case Datatype::Undefined: taco_ierror; return false;

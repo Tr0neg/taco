@@ -365,6 +365,8 @@ public:
   Literal(std::complex<double>);
 
   static Literal zero(Datatype);
+  /// Construct a literal from a value already encoded in the component type's storage form.
+  static Literal fromEncodedValue(Datatype, const void*);
 
   /// Returns the literal value.
   template <typename T> T getVal() const;

@@ -117,6 +117,9 @@ public:
   /// Push back all values in TypedVector
   void push_back_vector(TypedVector vector) {
     taco_iassert(type == vector.getType());
+    if (vector.size() == 0) {
+      return;
+    }
     resize(size() + vector.size());
     memcpy(&get(size()-vector.size()).get(), vector.data(), type.getNumBytes()*vector.size());
   }
