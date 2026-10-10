@@ -541,6 +541,26 @@ private:
   /// Per-output-element initialization guards for min/max reductions.
   std::map<TensorVar, ir::Expr> reductionOutputBitGuards;
 
+  struct CountDistinctState {
+    ir::Expr values;
+    ir::Expr counts;
+    ir::Expr reductionSize;
+  };
+  std::map<TensorVar, CountDistinctState> countDistinctStates;
+
+  struct AverageState {
+    ir::Expr counts;
+    bool scalar;
+  };
+  std::map<TensorVar, AverageState> averageStates;
+  std::map<TensorVar, ir::Expr> averageTempCounts;
+
+  struct CountDistinctTempState {
+    ir::Expr values;
+    ir::Expr count;
+  };
+  std::map<TensorVar, CountDistinctTempState> countDistinctTempStates;
+
   std::set<TensorVar> guardedTemps;
 
   /// Map from result tensors to variables tracking values array capacity.

@@ -455,3 +455,348 @@ TEST(expr, reduction_minimum_maximum_5d_half_full) {
 	fillExpected(expectedMax4, 4, false);
 	ASSERT_TRUE(equals(expectedMax4, max4)) << endl << expectedMax4 << endl << max4;
 }
+
+TEST(expr, reduction_average_dense) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 4 }, Format({ Dense }));
+	b.insert({ 0 }, 1.0);
+	b.insert({ 1 }, 3.0);
+	b.insert({ 2 }, 8.0);
+	b.insert({ 3 }, 0.0);
+	b.pack();
+
+	a = average(i, b(i));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 3.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_average_integer_input) {
+	Tensor<double> a("a");
+	Tensor<int> b("b", { 2 }, Format({ Dense }));
+	b.insert({ 0 }, 1);
+	b.insert({ 1 }, 2);
+	b.pack();
+
+	a = average(i, b(i));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 1.5);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_average_sparse) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 10 }, Format({ Sparse }, { 0 }));
+	b.insert({ 1 }, 3.0);
+	b.insert({ 4 }, 5.0);
+	b.insert({ 8 }, 0.0);
+	b.insert({ 9 }, 4.0);
+	b.pack();
+
+	a = average(i, b(i));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 3.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_average_empty_sparse) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 8 }, Format({ Sparse }, { 0 }));
+	b.pack();
+
+	a = average(i, b(i));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 0.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_average_multiple_indices) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 2, 3 }, Format({ Sparse, Sparse }));
+	b.insert({ 0, 0 }, 1.0);
+	b.insert({ 0, 1 }, 3.0);
+	b.insert({ 1, 2 }, 9.0);
+	b.pack();
+
+	a = average(std::vector<IndexVar>{ i, j }, b(i, j));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 13.0 / 3.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_average_per_output_sparse) {
+	Tensor<double> a("a", { 2 }, Format({ Dense }));
+	Tensor<double> b("b", { 4, 2 }, Format({ Sparse, Sparse }));
+	b.insert({ 0, 0 }, 2.0);
+	b.insert({ 3, 0 }, 4.0);
+	b.insert({ 0, 1 }, 3.0);
+	b.insert({ 1, 1 }, 6.0);
+	b.insert({ 2, 1 }, 9.0);
+	b.pack();
+
+	a(j) = average(i, b(i, j));
+	a.evaluate();
+
+	Tensor<double> expected("expected", { 2 }, Format({ Dense }));
+	expected.insert({ 0 }, 3.0);
+	expected.insert({ 1 }, 6.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_average_sparse_output) {
+	Tensor<double> a("a", { 2 }, Format({ Sparse }, { 0 }));
+	Tensor<double> b("b", { 2, 4 }, Format({ Sparse, Sparse }));
+	b.insert({ 0, 0 }, 2.0);
+	b.insert({ 0, 3 }, 4.0);
+	b.insert({ 1, 0 }, 3.0);
+	b.insert({ 1, 1 }, 6.0);
+	b.insert({ 1, 2 }, 9.0);
+	b.pack();
+
+	a(i) = average(j, b(i, j));
+	a.evaluate();
+
+	Tensor<double> expected("expected", { 2 }, Format({ Sparse }, { 0 }));
+	expected.insert({ 0 }, 3.0);
+	expected.insert({ 1 }, 6.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_counts_sparse_including_zero) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 8 }, Format({ Sparse }, { 0 }));
+	b.insert({ 1 }, 0.0);
+	b.insert({ 4 }, 17.0);
+	b.insert({ 7 }, -2.0);
+	b.pack();
+
+	a = counts(i, b(i));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 3.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_counts_multiple_indices) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 2, 3 }, Format({ Sparse, Sparse }));
+	b.insert({ 0, 0 }, 0.0);
+	b.insert({ 0, 1 }, 6.0);
+	b.insert({ 1, 2 }, 8.0);
+	b.pack();
+
+	a = counts(std::vector<IndexVar>{ i, j }, b(i, j));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 3.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_counts_per_output_sparse) {
+	Tensor<double> a("a", { 2 }, Format({ Dense }));
+	Tensor<double> b("b", { 4, 2 }, Format({ Sparse, Sparse }));
+	b.insert({ 0, 0 }, 2.0);
+	b.insert({ 3, 0 }, 4.0);
+	b.insert({ 0, 1 }, 0.0);
+	b.insert({ 1, 1 }, 6.0);
+	b.insert({ 2, 1 }, 9.0);
+	b.pack();
+
+	a(j) = counts(i, b(i, j));
+	a.evaluate();
+
+	Tensor<double> expected("expected", { 2 }, Format({ Dense }));
+	expected.insert({ 0 }, 2.0);
+	expected.insert({ 1 }, 3.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_counts_sparse_output) {
+	Tensor<double> a("a", { 2 }, Format({ Sparse }, { 0 }));
+	Tensor<double> b("b", { 2, 4 }, Format({ Sparse, Sparse }));
+	b.insert({ 0, 0 }, 2.0);
+	b.insert({ 0, 3 }, 4.0);
+	b.insert({ 1, 1 }, 0.0);
+	b.insert({ 1, 2 }, 6.0);
+	b.insert({ 1, 3 }, 9.0);
+	b.pack();
+
+	a(i) = counts(j, b(i, j));
+	a.evaluate();
+
+	Tensor<double> expected("expected", { 2 }, Format({ Sparse }, { 0 }));
+	expected.insert({ 0 }, 2.0);
+	expected.insert({ 1 }, 3.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_countsdist_dense) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 7 }, Format({ Dense }));
+	b.insert({ 0 }, 0.0);
+	b.insert({ 1 }, 2.0);
+	b.insert({ 2 }, 2.0);
+	b.insert({ 3 }, -1.0);
+	b.insert({ 4 }, 0.0);
+	b.insert({ 5 }, 5.0);
+	b.insert({ 6 }, -1.0);
+	b.pack();
+
+	a = countsdist(i, b(i));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 4.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_countsdist_multiple_indices) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 2, 3 }, Format({ Sparse, Sparse }));
+	b.insert({ 0, 0 }, 1.0);
+	b.insert({ 0, 1 }, 1.0);
+	b.insert({ 1, 2 }, 9.0);
+	b.pack();
+
+	a = countsdist(std::vector<IndexVar>{ i, j }, b(i, j));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 2.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_countsdist_sparse_including_zero) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 10 }, Format({ Sparse }, { 0 }));
+	b.insert({ 1 }, 7.0);
+	b.insert({ 3 }, 7.0);
+	b.insert({ 6 }, 0.0);
+	b.insert({ 9 }, -2.0);
+	b.pack();
+
+	a = countsdist(i, b(i));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 3.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_countsdist_per_output) {
+	Tensor<double> a("a", { 2 }, Format({ Dense }));
+	Tensor<double> b("b", { 4, 2 }, Format({ Dense, Dense }));
+	b.insert({ 0, 0 }, 1.0);
+	b.insert({ 0, 1 }, -2.0);
+	b.insert({ 1, 0 }, 1.0);
+	b.insert({ 1, 1 }, -2.0);
+	b.insert({ 2, 0 }, 2.0);
+	b.insert({ 2, 1 }, -2.0);
+	b.insert({ 3, 0 }, 3.0);
+	b.insert({ 3, 1 }, 0.0);
+	b.pack();
+
+	a(j) = countsdist(i, b(i, j));
+	a.evaluate();
+
+	Tensor<double> expected("expected", { 2 }, Format({ Dense }));
+	expected.insert({ 0 }, 3.0);
+	expected.insert({ 1 }, 2.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << endl << a;
+}
+
+TEST(expr, reduction_countsdist_per_output_sparse) {
+	Tensor<double> a("a", { 2 }, Format({ Dense }));
+	Tensor<double> b("b", { 4, 2 }, Format({ Sparse, Sparse }));
+	b.insert({ 0, 0 }, 1.0);
+	b.insert({ 1, 0 }, 1.0);
+	b.insert({ 2, 0 }, 2.0);
+	b.insert({ 0, 1 }, -2.0);
+	b.insert({ 1, 1 }, -2.0);
+	b.insert({ 3, 1 }, 0.0);
+	b.pack();
+
+	a(j) = countsdist(i, b(i, j));
+	a.evaluate();
+
+	Tensor<double> expected("expected", { 2 }, Format({ Dense }));
+	expected.insert({ 0 }, 2.0);
+	expected.insert({ 1 }, 2.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_countsdist_sparse_output) {
+	Tensor<double> a("a", { 2 }, Format({ Sparse }, { 0 }));
+	Tensor<double> b("b", { 2, 4 }, Format({ Sparse, Sparse }));
+	b.insert({ 0, 0 }, 2.0);
+	b.insert({ 0, 3 }, 2.0);
+	b.insert({ 1, 0 }, 0.0);
+	b.insert({ 1, 1 }, 6.0);
+	b.insert({ 1, 2 }, 6.0);
+	b.pack();
+
+	a(i) = countsdist(j, b(i, j));
+	a.evaluate();
+
+	Tensor<double> expected("expected", { 2 }, Format({ Sparse }, { 0 }));
+	expected.insert({ 0 }, 1.0);
+	expected.insert({ 1 }, 2.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_counts_empty_sparse) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 8 }, Format({ Sparse }, { 0 }));
+	b.pack();
+
+	a = counts(i, b(i));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 0.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}
+
+TEST(expr, reduction_countsdist_empty_sparse) {
+	Tensor<double> a("a");
+	Tensor<double> b("b", { 8 }, Format({ Sparse }, { 0 }));
+	b.pack();
+
+	a = countsdist(i, b(i));
+	a.evaluate();
+
+	Tensor<double> expected("expected");
+	expected.insert({}, 0.0);
+	expected.pack();
+	ASSERT_TRUE(equals(expected, a)) << endl << expected << endl << a;
+}

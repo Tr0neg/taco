@@ -1773,6 +1773,75 @@ Reduction maximum(const std::vector<IndexVar>& vars, IndexExpr expr) {
     return reduction;
 }
 
+Reduction counts(IndexVar i, IndexExpr expr) {
+    return Reduction(makeReductionOperator(
+        "counts", ReductionKind::Count,
+        [](const std::vector<ir::Expr>& args) {
+            taco_iassert(args.size() == 2);
+            return ir::Add::make(args[0], 1);
+        }), i, expr);
+}
+
+Reduction counts(const std::vector<IndexVar>& vars, IndexExpr expr) {
+    taco_iassert(!vars.empty()) << "A count reduction needs at least one index variable";
+    Reduction reduction;
+    for (auto var = vars.rbegin(); var != vars.rend(); ++var) {
+        reduction = counts(*var, expr);
+        expr = reduction;
+    }
+    return reduction;
+}
+
+Reduction counts(const std::vector<IndexVar>& vars, Access expr) {
+    return counts(vars, static_cast<IndexExpr>(expr));
+}
+
+Reduction countsdist(IndexVar i, IndexExpr expr) {
+    return Reduction(makeReductionOperator(
+        "countsdist", ReductionKind::CountDistinct,
+        [](const std::vector<ir::Expr>& args) {
+            taco_iassert(args.size() == 2);
+            return args[0]; // Lowered using a per-output set of seen values.
+        }), i, expr);
+}
+
+Reduction countsdist(const std::vector<IndexVar>& vars, IndexExpr expr) {
+    taco_iassert(!vars.empty()) << "A count-distinct reduction needs at least one index variable";
+    Reduction reduction;
+    for (auto var = vars.rbegin(); var != vars.rend(); ++var) {
+        reduction = countsdist(*var, expr);
+        expr = reduction;
+    }
+    return reduction;
+}
+
+Reduction average(IndexVar i, IndexExpr expr) {
+    return Reduction(makeReductionOperator(
+        "average", ReductionKind::Average,
+        [](const std::vector<ir::Expr>& args) {
+            taco_iassert(args.size() == 2);
+            return ir::Add::make(args[0], args[1]);
+        }), i, expr);
+}
+
+Reduction average(IndexVar i, Access expr) {
+    return average(i, static_cast<IndexExpr>(expr));
+}
+
+Reduction average(const std::vector<IndexVar>& vars, IndexExpr expr) {
+    taco_iassert(!vars.empty()) << "An average reduction needs at least one index variable";
+    Reduction reduction;
+    for (auto var = vars.rbegin(); var != vars.rend(); ++var) {
+        reduction = average(*var, expr);
+        expr = reduction;
+    }
+    return reduction;
+}
+
+Reduction average(const std::vector<IndexVar>& vars, Access expr) {
+    return average(vars, static_cast<IndexExpr>(expr));
+}
+
 template <> bool isa<Reduction>(IndexExpr s) {
   return isa<ReductionNode>(s.ptr);
 }

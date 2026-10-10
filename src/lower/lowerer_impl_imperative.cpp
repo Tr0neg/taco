@@ -379,24 +379,38 @@ LowererImplImperative::lower(IndexStmt stmt, string name,
   // Define and initialize scalar results and arguments
   if (generateComputeCode()) {
     for (auto& result : results) {
+      bool usesFirstValue = false;
+      bool usesCountDistinct = false;
+      bool usesAverage = false;
+      Datatype distinctValueType;
+      std::vector<IndexVar> assignmentIndices;
+      std::vector<IndexVar> outputIndices;
+      match(stmt,
+          function<void(const AssignmentNode*, Matcher*)>(
+              [&](const AssignmentNode* assignment, Matcher* matcher) {
+                if (assignment->lhs.getTensorVar() == result &&
+                    isa<Call>(assignment->op)) {
+                  const ReductionKind kind =
+                      to<Call>(assignment->op).getReductionKind();
+                  usesFirstValue = usesFirstValue ||
+                      kind == ReductionKind::Minimum ||
+                      kind == ReductionKind::Maximum;
+                  usesCountDistinct = usesCountDistinct ||
+                      kind == ReductionKind::CountDistinct;
+                  usesAverage = usesAverage || kind == ReductionKind::Average;
+                  if (kind == ReductionKind::CountDistinct) {
+                    distinctValueType = assignment->rhs.getDataType();
+                    assignmentIndices = Assignment(assignment).getIndexVars();
+                    outputIndices = assignment->lhs.getIndexVars();
+                  }
+                }
+                matcher->match(assignment->rhs);
+              }));
+
       if (isScalar(result.getType())) {
         taco_iassert(!util::contains(scalars, result));
         taco_iassert(util::contains(tensorVars, result));
         scalars.insert({result, tensorVars.at(result)});
-        bool usesFirstValue = false;
-        match(stmt,
-            function<void(const AssignmentNode*, Matcher*)>(
-                [&](const AssignmentNode* assignment, Matcher* matcher) {
-                  if (assignment->lhs.getTensorVar() == result &&
-                      isa<Call>(assignment->op)) {
-                    const ReductionKind kind =
-                        to<Call>(assignment->op).getReductionKind();
-                    usesFirstValue = usesFirstValue ||
-                        kind == ReductionKind::Minimum ||
-                        kind == ReductionKind::Maximum;
-                  }
-                  matcher->match(assignment->rhs);
-                }));
         header.push_back(defineScalarVariable(result, true));
         if (usesFirstValue) {
           Expr firstValueSeen = Var::make(result.getName() + "_first_value_seen",
@@ -404,22 +418,7 @@ LowererImplImperative::lower(IndexStmt stmt, string name,
           header.push_back(VarDecl::make(firstValueSeen, false));
           tempToBitGuard[result] = firstValueSeen;
         }
-      } else {
-        bool usesFirstValue = false;
-        match(stmt,
-            function<void(const AssignmentNode*, Matcher*)>(
-                [&](const AssignmentNode* assignment, Matcher* matcher) {
-                  if (assignment->lhs.getTensorVar() == result &&
-                      isa<Call>(assignment->op)) {
-                    const ReductionKind kind =
-                        to<Call>(assignment->op).getReductionKind();
-                    usesFirstValue = usesFirstValue ||
-                        kind == ReductionKind::Minimum ||
-                        kind == ReductionKind::Maximum;
-                  }
-                  matcher->match(assignment->rhs);
-                }));
-        if (usesFirstValue) {
+      } else if (usesFirstValue) {
           Expr guard = Var::make(result.getName() + "_reduction_initialized",
                                  Datatype::Bool, true, false);
           reductionOutputBitGuards[result] = guard;
@@ -438,7 +437,86 @@ LowererImplImperative::lower(IndexStmt stmt, string name,
           header.push_back(For::make(position, 0, size, 1, initializeGuard,
                                      LoopKind::Serial));
           footer.push_back(Free::make(guard));
+      }
+
+      if (usesAverage) {
+        AverageState state;
+        state.scalar = isScalar(result.getType());
+        const std::string countName = result.getName() + "_average_count";
+        state.counts = Var::make(countName, Int64, !state.scalar, false);
+        averageStates[result] = state;
+        header.push_back(VarDecl::make(state.counts, 0));
+
+        if (state.scalar) {
+          Expr value = tensorVars.at(result);
+          Expr count = state.counts;
+          Expr countType = ir::Cast::make(count, result.getType().getDataType());
+          footer.push_back(IfThenElse::make(
+              ir::Neg::make(ir::Eq::make(count, 0)),
+              Assign::make(value, ir::Div::make(value, countType))));
+        } else {
+          Expr size = 1;
+          Expr resultTensor = getTensorVar(result);
+          for (int mode = 0; mode < result.getOrder(); ++mode) {
+            size = ir::Mul::make(size,
+                GetProperty::make(resultTensor, TensorProperty::Dimension, mode));
+          }
+          header.push_back(Allocate::make(state.counts, size));
+          Expr position = Var::make(countName + "_init_pos", Int());
+          header.push_back(For::make(position, 0, size, 1,
+              Store::make(state.counts, position, 0), LoopKind::Serial));
+
+          Expr values = GetProperty::make(resultTensor, TensorProperty::Values);
+          Expr finalizePos = Var::make(countName + "_finalize_pos", Int());
+          Expr count = Load::make(state.counts, finalizePos);
+          Expr value = Load::make(values, finalizePos);
+          Stmt finalizeValue = IfThenElse::make(
+              ir::Neg::make(ir::Eq::make(count, 0)),
+              Store::make(values, finalizePos,
+                  ir::Div::make(value,
+                      ir::Cast::make(count, result.getType().getDataType()))));
+          footer.push_back(For::make(finalizePos, 0, size, 1,
+              finalizeValue, LoopKind::Serial));
+          footer.push_back(Free::make(state.counts));
         }
+      }
+
+      if (usesCountDistinct) {
+        taco_iassert(!assignmentIndices.empty());
+        Expr totalSize = 1;
+        for (const IndexVar& indexVar : assignmentIndices) {
+          totalSize = ir::Mul::make(totalSize, dimensions.at(indexVar));
+        }
+        Expr outputSize = 1;
+        for (const IndexVar& indexVar : outputIndices) {
+          outputSize = ir::Mul::make(outputSize, dimensions.at(indexVar));
+        }
+        Expr reductionSize = 1;
+        for (const IndexVar& indexVar : assignmentIndices) {
+          if (!util::contains(outputIndices, indexVar)) {
+            reductionSize = ir::Mul::make(reductionSize,
+                                          dimensions.at(indexVar));
+          }
+        }
+
+        CountDistinctState state;
+        state.values = Var::make(result.getName() + "_countdist_values",
+                                 distinctValueType, true, false);
+        state.counts = Var::make(result.getName() + "_countdist_counts",
+                                 Int64, true, false);
+        state.reductionSize = reductionSize;
+        countDistinctStates[result] = state;
+
+        header.push_back(VarDecl::make(state.values, 0));
+        header.push_back(VarDecl::make(state.counts, 0));
+        header.push_back(Allocate::make(state.values, totalSize));
+        header.push_back(Allocate::make(state.counts, outputSize));
+        Expr position = Var::make(result.getName() + "_countdist_init_pos", Int());
+        header.push_back(For::make(
+            position, 0, outputSize, 1,
+            Store::make(state.counts, position, 0), LoopKind::Serial));
+        footer.push_back(Free::make(state.values));
+        footer.push_back(Free::make(state.counts));
       }
     }
     for (auto& argument : arguments) {
@@ -517,6 +595,63 @@ Stmt LowererImplImperative::lowerAssignment(Assignment assignment)
     rhs = lower(assignment.getRhs());
   }
 
+  auto updateCountDistinct = [&](Expr outputValues, Expr outputLoc,
+                                 bool scalarOutput) {
+    const CountDistinctState& state = countDistinctStates.at(result);
+    const std::string prefix = result.getName() + "_countdist";
+    Expr countValue = Var::make(prefix + "_current_count", Int64);
+    Expr found = Var::make(prefix + "_found", Datatype::Bool);
+    Expr position = Var::make(prefix + "_search_pos", Int64);
+    Expr seenLoc = ir::Add::make(
+        ir::Mul::make(outputLoc, state.reductionSize), position);
+    Stmt compare = IfThenElse::make(
+        ir::Eq::make(Load::make(state.values, seenLoc), rhs),
+        Assign::make(found, true));
+    Stmt search = For::make(position, 0, countValue, 1, compare,
+                             LoopKind::Serial);
+
+    Expr newCount = ir::Add::make(countValue, 1);
+    Expr newSeenLoc = ir::Add::make(
+        ir::Mul::make(outputLoc, state.reductionSize), countValue);
+    Stmt addDistinctValue = Block::make(
+        Store::make(state.values, newSeenLoc, rhs),
+        Store::make(state.counts, outputLoc, newCount),
+        scalarOutput
+            ? Assign::make(outputValues,
+                ir::Cast::make(newCount, result.getType().getDataType()))
+            : Store::make(outputValues, outputLoc,
+                ir::Cast::make(newCount, result.getType().getDataType())));
+
+    return Block::make(
+        VarDecl::make(countValue, Load::make(state.counts, outputLoc)),
+        VarDecl::make(found, false),
+        search,
+        IfThenElse::make(ir::Neg::make(found), addDistinctValue));
+  };
+
+  auto updateCountDistinctTemp = [&](Expr outputValue) {
+    const CountDistinctTempState& state = countDistinctTempStates.at(result);
+    Expr found = Var::make(result.getName() + "_countdist_temp_found",
+                           Datatype::Bool);
+    Expr position = Var::make(result.getName() + "_countdist_temp_pos",
+                              Int64);
+    Stmt compare = IfThenElse::make(
+        ir::Eq::make(Load::make(state.values, position), rhs),
+        Assign::make(found, true));
+    Stmt search = For::make(position, 0, state.count, 1, compare,
+                            LoopKind::Serial);
+    Expr newCount = ir::Add::make(state.count, 1);
+    Stmt addDistinctValue = Block::make(
+        Store::make(state.values, state.count, rhs),
+        Assign::make(state.count, newCount),
+        Assign::make(outputValue,
+            ir::Cast::make(state.count, result.getType().getDataType())));
+    return Block::make(
+        VarDecl::make(found, false),
+        search,
+        IfThenElse::make(ir::Neg::make(found), addDistinctValue));
+  };
+
   // Assignment to scalar variables.
   if (isScalar(result.getType())) {
     if (needComputeAssign) {
@@ -533,7 +668,34 @@ Stmt LowererImplImperative::lowerAssignment(Assignment assignment)
             taco_iassert(isa<taco::Call>(assignment.getOperator()));
 
             Call op = to<Call>(assignment.getOperator());
-            if (op.getReductionKind() != ReductionKind::None &&
+            if (op.getReductionKind() == ReductionKind::Count &&
+                util::contains(tempToBitGuard, result)) {
+                computeStmt = Assign::make(var, ir::Add::make(var, 1));
+            }
+            else if (op.getReductionKind() == ReductionKind::Average &&
+                (util::contains(averageStates, result) ||
+                 util::contains(averageTempCounts, result))) {
+                Expr count = util::contains(averageStates, result)
+                    ? averageStates.at(result).counts
+                    : averageTempCounts.at(result);
+                Expr previousCount = count;
+                Stmt accumulate = IfThenElse::make(
+                    ir::Eq::make(previousCount, 0),
+                    Assign::make(var, rhs),
+                    Assign::make(var, ir::Add::make(var, rhs)));
+                computeStmt = Block::make(
+                    accumulate,
+                    Assign::make(count, ir::Add::make(previousCount, 1)));
+            }
+            else if (op.getReductionKind() == ReductionKind::CountDistinct &&
+                util::contains(countDistinctTempStates, result)) {
+                computeStmt = updateCountDistinctTemp(var);
+            }
+            else if (op.getReductionKind() == ReductionKind::CountDistinct &&
+                util::contains(countDistinctStates, result)) {
+                computeStmt = updateCountDistinct(var, 0, true);
+            }
+            else if (op.getReductionKind() != ReductionKind::None &&
                 util::contains(tempToBitGuard, result) && result.getOrder() == 0) {
                 Expr guard = tempToBitGuard[result];
                 Expr accumulated = op.getFunc()({ var, rhs });
@@ -631,6 +793,29 @@ Stmt LowererImplImperative::lowerAssignment(Assignment assignment)
             IfThenElse::make(wasInitialized, accumulate, initialize),
             Store::make(guard, loc, true));
       }
+    }
+
+    if (needComputeAssign && util::contains(averageStates, result) &&
+        isa<Call>(assignment.getOperator()) &&
+        to<Call>(assignment.getOperator()).getReductionKind() ==
+            ReductionKind::Average) {
+      Expr counts = averageStates.at(result).counts;
+      Expr previousCount = Load::make(counts, loc);
+      Stmt accumulate = IfThenElse::make(
+          ir::Eq::make(previousCount, 0),
+          Store::make(values, loc, rhs),
+          Store::make(values, loc,
+              ir::Add::make(Load::make(values, loc), rhs)));
+      computeStmt = Block::make(
+          accumulate,
+          Store::make(counts, loc, ir::Add::make(previousCount, 1)));
+    }
+
+    if (needComputeAssign && util::contains(countDistinctStates, result) &&
+        isa<Call>(assignment.getOperator()) &&
+        to<Call>(assignment.getOperator()).getReductionKind() ==
+            ReductionKind::CountDistinct) {
+      computeStmt = updateCountDistinct(values, loc, false);
     }
   }
 
@@ -2555,6 +2740,94 @@ vector<Stmt> LowererImplImperative::codeToInitializeTemporary(Where where) {
     Stmt initTempSet = VarDecl::make(tempSet, false);
     initializeTemporary = Block::make(initializeTemporary, initTempSet);
     tempToBitGuard[temporary] = tempSet;
+
+    ReductionKind temporaryReductionKind = ReductionKind::None;
+    Datatype distinctValueType;
+    match(where.getProducer(), std::function<void(const AssignmentNode*)>(
+        [&](const AssignmentNode* assignment) {
+          if (assignment->lhs.getTensorVar() == temporary &&
+              isa<Call>(assignment->op)) {
+            temporaryReductionKind =
+                to<Call>(assignment->op).getReductionKind();
+            if (temporaryReductionKind == ReductionKind::CountDistinct) {
+              distinctValueType = assignment->rhs.getDataType();
+            }
+          }
+        }));
+    if (temporaryReductionKind == ReductionKind::Average) {
+      Expr count = Var::make(temporary.getName() + "_average_count", Int64);
+      initializeTemporary = Block::make(
+          initializeTemporary, VarDecl::make(count, 0));
+      averageTempCounts[temporary] = count;
+    }
+    if (generateComputeCode() &&
+        temporaryReductionKind == ReductionKind::CountDistinct) {
+      std::set<IndexVar> outputIndices;
+      const auto consumerAccesses = getResultAccesses(where.getConsumer()).first;
+      taco_iassert(!consumerAccesses.empty());
+      for (const IndexVar& indexVar : consumerAccesses[0].getIndexVars()) {
+        const auto ancestors = provGraph.getUnderivedAncestors(indexVar);
+        outputIndices.insert(ancestors.begin(), ancestors.end());
+      }
+
+      std::map<IndexVar, Expr> reductionDimensions;
+      match(where.getProducer(),
+          std::function<void(const AssignmentNode*, Matcher*)>(
+              [&](const AssignmentNode* assignment, Matcher* matcher) {
+                matcher->match(assignment->rhs);
+              }),
+          std::function<void(const AccessNode*)>(
+              [&](const AccessNode* accessNode) {
+                Access access(accessNode);
+                for (int mode = 0;
+                     mode < access.getTensorVar().getOrder(); ++mode) {
+                  const IndexVar indexVar = access.getIndexVars()[mode];
+                  auto ancestors = provGraph.getUnderivedAncestors(indexVar);
+                  const bool isOutputIndex = std::any_of(
+                      ancestors.begin(), ancestors.end(),
+                      [&](const IndexVar& ancestor) {
+                        return util::contains(outputIndices, ancestor);
+                      });
+                  if (isOutputIndex) {
+                    continue;
+                  }
+                  const IndexVar reductionIndex = ancestors.empty()
+                      ? indexVar : ancestors.front();
+                  if (!util::contains(reductionDimensions, reductionIndex)) {
+                    Expr dimension;
+                    if (access.isModeIndexSet(mode)) {
+                      dimension = ir::Literal::make(
+                          access.getIndexSet(mode).size());
+                    } else {
+                      dimension = GetProperty::make(
+                          getTensorVar(access.getTensorVar()),
+                          TensorProperty::Dimension, mode);
+                    }
+                    reductionDimensions[reductionIndex] = dimension;
+                  }
+                }
+              }));
+
+      Expr distinctCapacity = 1;
+      for (const auto& reductionDimension : reductionDimensions) {
+        distinctCapacity = ir::Mul::make(distinctCapacity,
+                                         reductionDimension.second);
+      }
+
+      CountDistinctTempState state;
+      state.values = Var::make(
+          temporary.getName() + "_countdist_values", distinctValueType,
+          true, false);
+      state.count = Var::make(
+          temporary.getName() + "_countdist_count", Int64);
+      initializeTemporary = Block::make(
+          initializeTemporary,
+          VarDecl::make(state.values, 0),
+          Allocate::make(state.values, distinctCapacity),
+          VarDecl::make(state.count, 0));
+      freeTemporary = Free::make(state.values);
+      countDistinctTempStates[temporary] = state;
+    }
   } else {
     // TODO: Need to support keeping track of initialized elements for
     //       temporaries that don't have sparse accelerator
@@ -2672,6 +2945,15 @@ Stmt LowererImplImperative::lowerWhere(Where where) {
   }
 
   Stmt producer = lower(where.getProducer());
+  if (util::contains(averageTempCounts, temporary)) {
+    Expr count = averageTempCounts.at(temporary);
+    Expr value = getTensorVar(temporary);
+    Expr countType = ir::Cast::make(count, temporary.getType().getDataType());
+    Stmt finalizeAverage = IfThenElse::make(
+        ir::Neg::make(ir::Eq::make(count, 0)),
+        Assign::make(value, ir::Div::make(value, countType)));
+    producer = Block::make(producer, finalizeAverage);
+  }
   if (accelerateDenseWorkSpace) {
     const Expr indexListSizeExpr = tempToIndexListSize.at(temporary);
     const Stmt indexListSizeDecl = VarDecl::make(indexListSizeExpr, ir::Literal::make(0));

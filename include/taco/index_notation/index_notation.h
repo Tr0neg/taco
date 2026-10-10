@@ -491,11 +491,14 @@ public:
   typedef CastNode Node;
 };
 
-/// Identifies built-in numeric reduction operators.
+/// Identifies built-in reduction operators.
 enum class ReductionKind {
     None,
     Minimum,
-    Maximum
+    Maximum,
+    Average,
+    Count,
+    CountDistinct
 };
 
 /// A call to an operator
@@ -604,6 +607,24 @@ Reduction minimum(const std::vector<IndexVar>& vars, IndexExpr expr);
 Reduction maximum(IndexVar i, IndexExpr expr);
 /// Create a maximum reduction over multiple index variables in one operation.
 Reduction maximum(const std::vector<IndexVar>& vars, IndexExpr expr);
+
+/// Count the values visited by the reduction expression.
+Reduction counts(IndexVar i, IndexExpr expr);
+/// Count the values visited while reducing multiple index variables at once.
+Reduction counts(const std::vector<IndexVar>& vars, IndexExpr expr);
+Reduction counts(const std::vector<IndexVar>& vars, Access expr);
+
+/// Count distinct values visited by the reduction expression.
+Reduction countsdist(IndexVar i, IndexExpr expr);
+/// Count distinct values while reducing multiple index variables at once.
+Reduction countsdist(const std::vector<IndexVar>& vars, IndexExpr expr);
+
+/// Compute the arithmetic mean of the values visited by the reduction.
+Reduction average(IndexVar i, IndexExpr expr);
+Reduction average(IndexVar i, Access expr);
+/// Compute the arithmetic mean while reducing multiple index variables at once.
+Reduction average(const std::vector<IndexVar>& vars, IndexExpr expr);
+Reduction average(const std::vector<IndexVar>& vars, Access expr);
 
 /// Return true if the index statement is of the given subtype.  The subtypes
 /// are Assignment, Forall, Where, Multi, and Sequence.
