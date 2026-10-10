@@ -538,6 +538,9 @@ private:
   /// Map form temporary to bitGuard var if accelerating dense workspace
   std::map<TensorVar, ir::Expr> tempToBitGuard;
 
+  /// Per-output-element initialization guards for min/max reductions.
+  std::map<TensorVar, ir::Expr> reductionOutputBitGuards;
+
   std::set<TensorVar> guardedTemps;
 
   /// Map from result tensors to variables tracking values array capacity.

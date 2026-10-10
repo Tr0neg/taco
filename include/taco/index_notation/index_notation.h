@@ -597,9 +597,13 @@ Reduction sum(IndexVar i, IndexExpr expr);
 
 /// Create a minimum reduction.
 Reduction minimum(IndexVar i, IndexExpr expr);
+/// Create a minimum reduction over multiple index variables in one operation.
+Reduction minimum(const std::vector<IndexVar>& vars, IndexExpr expr);
 
 /// Create a maximum reduction.
 Reduction maximum(IndexVar i, IndexExpr expr);
+/// Create a maximum reduction over multiple index variables in one operation.
+Reduction maximum(const std::vector<IndexVar>& vars, IndexExpr expr);
 
 /// Return true if the index statement is of the given subtype.  The subtypes
 /// are Assignment, Forall, Where, Multi, and Sequence.

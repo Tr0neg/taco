@@ -1744,6 +1744,16 @@ Reduction minimum(IndexVar i, IndexExpr expr) {
         }), i, expr);
 }
 
+Reduction minimum(const std::vector<IndexVar>& vars, IndexExpr expr) {
+    taco_iassert(!vars.empty()) << "A minimum reduction needs at least one index variable";
+    Reduction reduction;
+    for (auto var = vars.rbegin(); var != vars.rend(); ++var) {
+        reduction = minimum(*var, expr);
+        expr = reduction;
+    }
+    return reduction;
+}
+
 Reduction maximum(IndexVar i, IndexExpr expr) {
     return Reduction(makeReductionOperator(
         "maximum", ReductionKind::Maximum,
@@ -1751,6 +1761,16 @@ Reduction maximum(IndexVar i, IndexExpr expr) {
             taco_iassert(args.size() == 2);
             return ir::Max::make(args[0], args[1]);
         }), i, expr);
+}
+
+Reduction maximum(const std::vector<IndexVar>& vars, IndexExpr expr) {
+    taco_iassert(!vars.empty()) << "A maximum reduction needs at least one index variable";
+    Reduction reduction;
+    for (auto var = vars.rbegin(); var != vars.rend(); ++var) {
+        reduction = maximum(*var, expr);
+        expr = reduction;
+    }
+    return reduction;
 }
 
 template <> bool isa<Reduction>(IndexExpr s) {

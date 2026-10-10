@@ -383,7 +383,62 @@ LowererImplImperative::lower(IndexStmt stmt, string name,
         taco_iassert(!util::contains(scalars, result));
         taco_iassert(util::contains(tensorVars, result));
         scalars.insert({result, tensorVars.at(result)});
+        bool usesFirstValue = false;
+        match(stmt,
+            function<void(const AssignmentNode*, Matcher*)>(
+                [&](const AssignmentNode* assignment, Matcher* matcher) {
+                  if (assignment->lhs.getTensorVar() == result &&
+                      isa<Call>(assignment->op)) {
+                    const ReductionKind kind =
+                        to<Call>(assignment->op).getReductionKind();
+                    usesFirstValue = usesFirstValue ||
+                        kind == ReductionKind::Minimum ||
+                        kind == ReductionKind::Maximum;
+                  }
+                  matcher->match(assignment->rhs);
+                }));
         header.push_back(defineScalarVariable(result, true));
+        if (usesFirstValue) {
+          Expr firstValueSeen = Var::make(result.getName() + "_first_value_seen",
+                                          Datatype::Bool);
+          header.push_back(VarDecl::make(firstValueSeen, false));
+          tempToBitGuard[result] = firstValueSeen;
+        }
+      } else {
+        bool usesFirstValue = false;
+        match(stmt,
+            function<void(const AssignmentNode*, Matcher*)>(
+                [&](const AssignmentNode* assignment, Matcher* matcher) {
+                  if (assignment->lhs.getTensorVar() == result &&
+                      isa<Call>(assignment->op)) {
+                    const ReductionKind kind =
+                        to<Call>(assignment->op).getReductionKind();
+                    usesFirstValue = usesFirstValue ||
+                        kind == ReductionKind::Minimum ||
+                        kind == ReductionKind::Maximum;
+                  }
+                  matcher->match(assignment->rhs);
+                }));
+        if (usesFirstValue) {
+          Expr guard = Var::make(result.getName() + "_reduction_initialized",
+                                 Datatype::Bool, true, false);
+          reductionOutputBitGuards[result] = guard;
+
+          Expr size = 1;
+          Expr resultTensor = getTensorVar(result);
+          for (int mode = 0; mode < result.getOrder(); ++mode) {
+            size = ir::Mul::make(size,
+                GetProperty::make(resultTensor, TensorProperty::Dimension, mode));
+          }
+          header.push_back(VarDecl::make(guard, 0));
+          header.push_back(Allocate::make(guard, size));
+          Expr position = Var::make(result.getName() + "_reduction_guard_pos",
+                                    Int());
+          Stmt initializeGuard = Store::make(guard, position, false);
+          header.push_back(For::make(position, 0, size, 1, initializeGuard,
+                                     LoopKind::Serial));
+          footer.push_back(Free::make(guard));
+        }
       }
     }
     for (auto& argument : arguments) {
@@ -560,6 +615,22 @@ Stmt LowererImplImperative::lowerAssignment(Assignment assignment)
     if (!accessStmts.empty()) {
       accessStmts.push_back(computeStmt);
       computeStmt = Block::make(accessStmts);
+    }
+
+    if (needComputeAssign && util::contains(reductionOutputBitGuards, result) &&
+        isa<Call>(assignment.getOperator())) {
+      Call op = to<Call>(assignment.getOperator());
+      const ReductionKind kind = op.getReductionKind();
+      if (kind == ReductionKind::Minimum || kind == ReductionKind::Maximum) {
+        Expr guard = reductionOutputBitGuards.at(result);
+        Expr wasInitialized = Load::make(guard, loc);
+        Stmt accumulate = Store::make(values, loc,
+            op.getFunc()({Load::make(values, loc), rhs}));
+        Stmt initialize = Store::make(values, loc, rhs);
+        computeStmt = Block::make(
+            IfThenElse::make(wasInitialized, accumulate, initialize),
+            Store::make(guard, loc, true));
+      }
     }
   }
 
