@@ -306,6 +306,7 @@ struct CallNode : public IndexExprNode {
   std::string name;
   std::vector<IndexExpr> args;
   OpImpl defaultLowerFunc;
+  ReductionKind reductionKind = ReductionKind::None;
   IterationAlgebra iterAlg;
   std::vector<Property> properties;
   std::map<std::vector<int>, OpImpl> regionDefinitions;

@@ -473,16 +473,28 @@ Stmt LowererImplImperative::lowerAssignment(Assignment assignment)
                           !util::contains(whereTemps, result);
         if (isa<taco::Add>(assignment.getOperator())) {
             computeStmt = compoundAssign(var, rhs, useAtomics, atomicParallelUnit);
-        } else {
-          taco_iassert(isa<taco::Call>(assignment.getOperator()));
+        }
+        else {
+            taco_iassert(isa<taco::Call>(assignment.getOperator()));
 
-          Call op = to<Call>(assignment.getOperator());
-          Expr assignOp = op.getFunc()({var, rhs});
-          Stmt assign = Assign::make(var, assignOp, useAtomics,
-                                     atomicParallelUnit);
+            Call op = to<Call>(assignment.getOperator());
+            if (op.getReductionKind() != ReductionKind::None &&
+                util::contains(guardedTemps, result) && result.getOrder() == 0) {
+                Expr guard = tempToBitGuard[result];
+                Expr accumulated = op.getFunc()({ var, rhs });
+                computeStmt = IfThenElse::make(
+                    guard,
+                    Assign::make(var, accumulated),
+                    Assign::make(var, rhs));
+            }
+            else {
+                Expr assignOp = op.getFunc()({ var, rhs });
+                Stmt assign = Assign::make(var, assignOp, useAtomics,
+                    atomicParallelUnit);
 
-          std::vector<Property> properties = op.getProperties();
-          computeStmt = Block::make(assign, emitEarlyExit(var, properties));
+                std::vector<Property> properties = op.getProperties();
+                computeStmt = Block::make(assign, emitEarlyExit(var, properties));
+            }
         }
       }
     }

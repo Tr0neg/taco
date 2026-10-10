@@ -1514,6 +1514,10 @@ const std::string Call::getName() const {
   return getNode(*this)->name;
 }
 
+ReductionKind Call::getReductionKind() const {
+    return getNode(*this)->reductionKind;
+}
+
 const std::map<std::vector<int>, CallNode::OpImpl> Call::getDefs() const {
   return getNode(*this)->regionDefinitions;
 }
@@ -1716,6 +1720,37 @@ IndexExpr Reduction::getExpr() const {
 
 Reduction sum(IndexVar i, IndexExpr expr) {
   return Reduction(Add(), i, expr);
+}
+
+namespace {
+
+    IndexExpr makeReductionOperator(const std::string& name,
+        ReductionKind kind,
+        CallNode::OpImpl lowerFunc) {
+        auto* node = new CallNode(name, {}, std::move(lowerFunc),
+            IterationAlgebra(), {}, {});
+        node->reductionKind = kind;
+        return Call(node);
+    }
+
+}
+
+Reduction minimum(IndexVar i, IndexExpr expr) {
+    return Reduction(makeReductionOperator(
+        "minimum", ReductionKind::Minimum,
+        [](const std::vector<ir::Expr>& args) {
+            taco_iassert(args.size() == 2);
+            return ir::Min::make(args[0], args[1]);
+        }), i, expr);
+}
+
+Reduction maximum(IndexVar i, IndexExpr expr) {
+    return Reduction(makeReductionOperator(
+        "maximum", ReductionKind::Maximum,
+        [](const std::vector<ir::Expr>& args) {
+            taco_iassert(args.size() == 2);
+            return ir::Max::make(args[0], args[1]);
+        }), i, expr);
 }
 
 template <> bool isa<Reduction>(IndexExpr s) {

@@ -491,6 +491,13 @@ public:
   typedef CastNode Node;
 };
 
+/// Identifies built-in numeric reduction operators.
+enum class ReductionKind {
+    None,
+    Minimum,
+    Maximum
+};
+
 /// A call to an operator
 class Call: public IndexExpr {
 public:
@@ -505,6 +512,7 @@ public:
   const std::string getName() const;
   const std::map<std::vector<int>, std::function<ir::Expr(const std::vector<ir::Expr>&)>> getDefs() const;
   const std::vector<int>& getDefinedArgs() const;
+  ReductionKind getReductionKind() const;
 
   typedef CallNode Node;
 
@@ -586,6 +594,12 @@ public:
 
 /// Create a summation index expression.
 Reduction sum(IndexVar i, IndexExpr expr);
+
+/// Create a minimum reduction.
+Reduction minimum(IndexVar i, IndexExpr expr);
+
+/// Create a maximum reduction.
+Reduction maximum(IndexVar i, IndexExpr expr);
 
 /// Return true if the index statement is of the given subtype.  The subtypes
 /// are Assignment, Forall, Where, Multi, and Sequence.
