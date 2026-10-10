@@ -479,7 +479,7 @@ Stmt LowererImplImperative::lowerAssignment(Assignment assignment)
 
             Call op = to<Call>(assignment.getOperator());
             if (op.getReductionKind() != ReductionKind::None &&
-                util::contains(guardedTemps, result) && result.getOrder() == 0) {
+                util::contains(tempToBitGuard, result) && result.getOrder() == 0) {
                 Expr guard = tempToBitGuard[result];
                 Expr accumulated = op.getFunc()({ var, rhs });
                 computeStmt = IfThenElse::make(
@@ -563,11 +563,11 @@ Stmt LowererImplImperative::lowerAssignment(Assignment assignment)
     }
   }
 
-  if (util::contains(guardedTemps, result) && result.getOrder() == 0) {
-    Expr guard = tempToBitGuard[result];
-    Stmt setGuard = Assign::make(guard, true, markAssignsAtomicDepth > 0,
-                                 atomicParallelUnit);
-    computeStmt = Block::make(computeStmt, setGuard);
+  if (util::contains(tempToBitGuard, result) && result.getOrder() == 0) {
+      Expr guard = tempToBitGuard[result];
+      Stmt setGuard = Assign::make(guard, true, markAssignsAtomicDepth > 0,
+          atomicParallelUnit);
+      computeStmt = Block::make(computeStmt, setGuard);
   }
 
   Expr assembleGuard = generateAssembleGuard(assignment.getRhs());
